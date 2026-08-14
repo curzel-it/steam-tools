@@ -126,6 +126,37 @@ the end of every run: screenshots have to be actual gameplay, and the library lo
 transparency, so neither can be cut out of a background. Seven files in a folder otherwise look
 exactly like nine.
 
+### What Steam asks of each one
+
+The tool gets the geometry right and nothing else. Most of what Steamworks asks is about content, so
+a capsule can be the correct size and still be rejected. Condensed from the upload page, keeping
+what changes what you make.
+
+The four marketing capsules (header, small, main, vertical) want the artwork and logo you would put
+on physical packaging, and no quotes, review scores or awards anywhere in the image. Beyond that:
+
+| Asset | What Steam wants of it |
+|---|---|
+| `header_capsule` | Branding, logo legible. Stands in for the library header if you upload none |
+| `small_capsule` | A logo that stays legible at every size it is drawn at, which in practice means it nearly fills the capsule. This is the one every list on Steam shows |
+| `page_background` | Neutral. Steam tints it blue and fades the edges, so avoid high contrast and avoid text. Skip it and Steam picks one of your screenshots at random |
+| `library_capsule` | Artwork, logo and the title, ideally the packaging's title treatment, and no other text. The art should show something that matters about the game. Steam derives the 300×450 from it |
+| `library_header` | The library capsule's look, logo legible |
+| `library_hero` | No text and no logo in it at all, since the library logo is a separate upload that parallaxes over this layer. The image fills 3840×1240, but only the centre 860×380 survives every client window width, so anything that has to stay recognisable belongs inside it. Steam derives the 1920×620 from it |
+
+The two it does not make:
+
+- **Screenshots.** Five or more, widescreen 16:9, at least 1920×1080, and gameplay only: no concept
+  art, no cutscene frames, nothing carrying awards or marketing copy, and no menus unless a menu is
+  genuinely distinctive. Show the player's perspective and the genre, since visible UI reads both
+  quickly. If the game has mature content, upload and flag at least four all-ages screenshots,
+  because those are the ones Steam may show outside your store page. Localised versions are matched
+  by filename suffix, `foo_japanese.jpg`.
+- **Library logo.** 1280 wide and/or 720 tall, PNG on a transparent background, in whatever aspect
+  suits the mark. Steamworks places it over the hero: bottom-left, top-centre, middle-centre or
+  bottom-centre. Upload neither this nor a hero and the library page falls back to a store
+  screenshot with the app name set over the bottom-left corner.
+
 ### Framing
 
 An `artwork` block in `steam.config.json`, or in the `"steam"` key of `package.json`. Only `source`
