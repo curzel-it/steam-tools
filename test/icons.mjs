@@ -82,11 +82,7 @@ try {
     ok(stdout.includes("UPSCALED"),
       "1024 out of a 128 source is called an enlargement rather than left to be discovered");
     ok(stdout.includes("already square"), "a square source says it was one");
-    ok(stdout.includes("no transparent pixel"), "and an opaque source is told what that looks like in a Dock");
-    // The other half of that note, and the half that makes it worth having: a source drawn the way
-    // an icon is drawn must not be warned about, or the warning is a line nobody reads.
-    ok(!run(project({ clear: true }), ["--print"]).stdout.includes("no transparent pixel"),
-      "while a source with transparency in it is not warned about at all");
+    ok(stdout.includes("squircle on"), "and every run says which way the corners went");
   });
 
   group("the zip is a flat bag of PNGs, each the size its name claims", () => {
@@ -128,7 +124,11 @@ try {
     ok(alphaAt(img, 16, 0) === 0 && alphaAt(img, 16, 31) === 0, "the padding is actually transparent");
     ok(alphaAt(img, 16, 16) === 255, "and the picture is still in the middle of it");
 
-    const cut = project({ size: [200, 100], icon: { source: "art/icon.png", square: "crop", linuxSizes: [32] } });
+    // The squircle is off here so that "every pixel is opaque" means the crop and only the crop.
+    const cut = project({
+      size: [200, 100],
+      icon: { source: "art/icon.png", square: "crop", squircle: "off", linuxSizes: [32] },
+    });
     const cropped = run(cut, ["--only", "linux"]);
     ok(cropped.stdout.includes("cropped to 100x100 at 50,0"), "crop takes the middle square and prints where");
     const tight = decodePng(Buffer.from(zip(cut)[0].data));
@@ -146,6 +146,46 @@ try {
     const idle = run(project({ icon: { source: "art/icon.png", focus: { x: 0.2 } } }), ["--print"]);
     ok(idle.stdout.includes("focus is set and nothing was cropped"),
       "a focus with no crop to steer is reported rather than silently ignored");
+  });
+
+  group("the squircle, decided three ways", () => {
+    // A 32x32 cut from a plate with no transparency in it. Its own corner is what the mask takes,
+    // and the plate is a ramp, so a corner that survived is opaque and one that did not is 0.
+    const corner = (root) => alphaAt(decodePng(Buffer.from(zip(root)[0].data)), 0, 0);
+    const opaque = { source: "art/icon.png", linuxSizes: [32] };
+
+    const auto = project({ icon: opaque });
+    const on = run(auto, ["--only", "linux"]);
+    ok(on.stdout.includes("squircle on") && on.stdout.includes("no transparency in the source"),
+      "auto rounds a source that has no transparency of its own, and says that is why");
+    ok(corner(auto) === 0, "and the corner is actually gone from the file");
+
+    // The same plate with a transparent edge: a source drawn with a silhouette of its own is left
+    // alone, because a superellipse over one either does nothing or clips something deliberate.
+    const drawn = project({ icon: opaque, clear: true });
+    const off = run(drawn, ["--only", "linux"]);
+    ok(off.stdout.includes("squircle off") && off.stdout.includes("silhouette of its own"),
+      "auto leaves a source that already has transparency alone");
+    ok(corner(drawn) === 255, "and its corner survives, which is what auto is deciding about");
+
+    const forcedOn = project({ icon: opaque, clear: true });
+    const forced = run(forcedOn, ["--only", "linux", "--squircle", "on"]);
+    ok(forced.stdout.includes('forced with "squircle": "on"'), "--squircle on overrides that, and says so");
+    ok(corner(forcedOn) === 0, "and rounds it anyway");
+
+    const forcedOff = project({ icon: opaque });
+    const kept = run(forcedOff, ["--only", "linux", "--squircle", "off"]);
+    ok(kept.stdout.includes('forced with "squircle": "off"'), "--squircle off overrides it the other way");
+    ok(corner(forcedOff) === 255, "and leaves the rectangle a rectangle");
+    ok(kept.stdout.includes("draw it as the"),
+      "which is the one case still worth a warning, since nothing downstream will round it");
+
+    const config = project({ icon: { ...opaque, squircle: false } });
+    run(config, ["--only", "linux"]);
+    ok(corner(config) === 255, "false in the config is off, since that is what anyone writes in JSON");
+
+    ok(run(project(), ["--squircle", "yes"]).stderr.includes('"auto", "on", "off"'),
+      "and a value that is none of them is refused with the ones that are");
   });
 
   group("--print, --only and linuxSizes", () => {

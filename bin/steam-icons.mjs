@@ -12,6 +12,7 @@
 //   npx steam-icons --only linux                 # or mac
 //   npx steam-icons --source art/icon.png --out steam
 //   npx steam-icons --square crop                # for a source that is not square
+//   npx steam-icons --squircle on                # or off, over what the source says
 //   npx steam-icons --root path/to/project
 //
 // Spell the flags on a direct call rather than through `npm run x -- --flag`: npm's PowerShell shim
@@ -23,12 +24,15 @@
 //     "source": "art/icon.png",
 //     "out": "steam",
 //     "square": "pad",
+//     "squircle": "auto",
 //     "focus": { "x": 0.5, "y": 0.5 },
 //     "linuxSizes": [16, 24, 32, 48, 64, 96, 128, 256]
 //   }
 //
 //   square      what to do with a source that is not square. "pad" (default) centres it on a
 //               transparent square and keeps all of it; "crop" takes the largest square in it
+//   squircle    round the corners the way macOS does. "auto" (default) rounds a source that has no
+//               transparency of its own, since that one is a rectangle; "on" and "off" decide it
 //   focus       0..1 in the source, the point "crop" centres on. Nothing to do in "pad"
 //   linuxSizes  the PNGs in the zip. The default is Steam's list plus the rest of hicolor's
 
@@ -55,6 +59,7 @@ function main() {
     source: valueOf("--source"),
     out: valueOf("--out"),
     square: valueOf("--square"),
+    squircle: valueOf("--squircle"),
     only: ONLY,
   });
 
@@ -82,9 +87,16 @@ function main() {
   if (plan.idleFocus) {
     console.log("      focus is set and nothing was cropped, so it did nothing");
   }
-  if (plan.opaque) {
-    console.log(`      the source has no transparent pixel in it — a Dock, a launcher and a task` +
-      `\n      switcher will each draw it as the rectangle it is`);
+  // Which way the squircle went and what decided it, on every run. "auto" is the default, so most
+  // runs are being told something they did not ask for — and a corner that was rounded or left
+  // alone is not visible in a folder full of PNGs until it is in a Dock.
+  const why = cfg.squircle !== "auto" ? `forced with "squircle": "${cfg.squircle}"`
+    : plan.opaque ? "auto, and there is no transparency in the source"
+      : "auto, and the source has a silhouette of its own";
+  console.log(`      squircle ${plan.rounded ? "on " : "off"} — ${why}`);
+  if (plan.opaque && !plan.rounded) {
+    console.log(`      so a Dock, a launcher and a task switcher will each draw it as the` +
+      `\n      rectangle it is`);
   }
 
   console.log("");

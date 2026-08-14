@@ -17,6 +17,7 @@ import { die, rawConfig } from "./config.mjs";
 import { crop, filterFor, frame, pad, resample } from "./image.mjs";
 import { ICNS_ENTRIES, ICNS_SIZES, encodeIcns } from "./icns.mjs";
 import { decodePng, encodePng } from "./png.mjs";
+import { squircle } from "./squircle.mjs";
 import { encodeZip } from "./zip.mjs";
 
 export const MAC_FILE = "mac_icon.icns";
@@ -30,8 +31,9 @@ export const LINUX_SIZES = [16, 24, 32, 48, 64, 96, 128, 256];
 export const TARGETS = ["mac", "linux"];
 export const FILE_FOR = { mac: MAC_FILE, linux: LINUX_FILE };
 
-const ICON_OPTS = ["source", "out", "square", "focus", "linuxSizes"];
+const ICON_OPTS = ["source", "out", "square", "squircle", "focus", "linuxSizes"];
 const SQUARE = ["pad", "crop"];
+const SQUIRCLE = ["auto", "on", "off"];
 
 export function loadIcons(root, over = {}) {
   const { pkg, raw, path } = rawConfig(root);
@@ -58,6 +60,14 @@ export function loadIcons(root, over = {}) {
     die(`square is "${square}" — it is ${SQUARE.map((s) => `"${s}"`).join(" or ")}.`);
   }
 
+  // true and false are what anyone writes into JSON for a switch, and there is nothing else they
+  // could mean, so they are taken rather than corrected. "auto" is the third state and the default.
+  const asked = over.squircle || icon.squircle;
+  const squircle = asked === true ? "on" : asked === false ? "off" : asked || "auto";
+  if (!SQUIRCLE.includes(squircle)) {
+    die(`squircle is ${JSON.stringify(asked)} — it is ${SQUIRCLE.map((s) => `"${s}"`).join(", ")}, true or false.`);
+  }
+
   const sizes = icon.linuxSizes || LINUX_SIZES;
   if (!Array.isArray(sizes) || !sizes.length) {
     die(`icon.linuxSizes is ${JSON.stringify(sizes)} — it is a list of pixel sizes, like ${JSON.stringify(LINUX_SIZES)}.`);
@@ -78,6 +88,7 @@ export function loadIcons(root, over = {}) {
     out: resolve(root, over.out || icon.out || "steam"),
     source: sourceAt(root, source),
     square,
+    squircle,
     focus: icon.focus,
     targets: TARGETS.filter((t) => !only || only.includes(t)),
     linuxSizes: [...new Set(sizes)].sort((a, b) => a - b),
@@ -118,14 +129,21 @@ export function planIcons(src, cfg) {
     }
   }
 
+  // AUTO IS ONE QUESTION: does this source have any transparency of its own? An icon that has none
+  // is a rectangle, drawn as a rectangle, and rounding it is the fix. An icon that has some was
+  // drawn with its own silhouette — a circle, a badge, a mark on nothing — and a superellipse laid
+  // over that either does nothing or clips the corners off something deliberate.
+  const opaque = everyPixelOpaque(src);
+
   return {
     how,
     side,
     rect,
+    opaque,
+    rounded: cfg.squircle === "on" || (cfg.squircle === "auto" && opaque),
     // A focus that steered nothing is almost always a focus that was meant to: it is typed while
     // looking at a crop that is coming out wrong, and in "pad" there is no crop for it to move.
     idleFocus: Boolean(cfg.focus) && how !== "crop",
-    opaque: everyPixelOpaque(src),
     sizes: [...wanted].sort((a, b) => a - b).map((size) => ({
       size,
       filter: filterFor(side, side, size, size),
@@ -145,9 +163,14 @@ function everyPixelOpaque(img) {
 }
 
 export function renderIcons(src, cfg, plan) {
-  const master = plan.how === "crop" ? crop(src, plan.rect.x, plan.rect.y, plan.rect.w, plan.rect.h)
+  const squared = plan.how === "crop" ? crop(src, plan.rect.x, plan.rect.y, plan.rect.w, plan.rect.h)
     : plan.how === "pad" ? pad(src, plan.side, plan.side)
       : src;
+
+  // Rounded once, on the master, and never again. Every size below is a shrink of this one, and the
+  // box filter carries the softened edge down with it — where masking each size separately would
+  // draw a fresh hard curve into a 16x16 with nothing left to antialias it against.
+  const master = plan.rounded ? squircle(squared) : squared;
 
   const png = new Map();
   for (const { size } of plan.sizes) png.set(size, encodePng(resample(master, size, size)));

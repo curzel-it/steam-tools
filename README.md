@@ -223,6 +223,7 @@ npx steam-icons --print                  # plan only, write nothing
 npx steam-icons --only linux             # or mac
 npx steam-icons --source art/icon.png --out steam
 npx steam-icons --square crop            # for a source that is not square
+npx steam-icons --squircle on            # or off, over what the source says
 ```
 
 There is no Windows field, and that is not an omission: the Windows icon is compiled into the `.exe`,
@@ -251,6 +252,7 @@ required.
     "source": "art/icon.png",
     "out": "steam",
     "square": "pad",
+    "squircle": "auto",
     "focus": { "x": 0.5, "y": 0.5 },
     "linuxSizes": [16, 24, 32, 48, 64, 96, 128, 256]
   }
@@ -260,14 +262,33 @@ required.
 | Key | Meaning |
 |---|---|
 | `square` | what to do with a source that is not square. `pad` (default) centres it on a transparent square and keeps all of it; `crop` takes the largest square in it |
+| `squircle` | round the corners. `auto` (default), `on`/`true`, `off`/`false` |
 | `focus` | 0..1 in the source, the point `crop` centres on. There is nothing for it to do in `pad`, and a run that was given one anyway says so |
 | `linuxSizes` | the PNGs in the zip |
 
-One square PNG on transparency, 1024×1024 or bigger, and nothing is enlarged or padded at all. Every
-size prints its resampling filter, and anything bigger than the source is called out in capitals —
-1024 is what macOS wants and what almost no icon source has. An opaque source is reported too: an
-icon with no transparency in it is drawn as the rectangle it is by a Dock, a launcher and a task
-switcher, and that is not something a resize can fix.
+One square PNG, 1024×1024 or bigger, and nothing is enlarged or padded at all. Every size prints its
+resampling filter, and anything bigger than the source is called out in capitals — 1024 is what
+macOS wants and what almost no icon source has.
+
+### The corners
+
+macOS rounds nothing on your behalf in the Dock, and neither does any Linux launcher. iOS is the
+exception: it masks the corners itself, which is why an iOS app icon is authored as a full-bleed
+square and why using one straight is the usual way to end up with the one hard rectangle in a row of
+rounded neighbours.
+
+So `auto` asks one question — does this source have any transparency of its own? A source with none
+is a rectangle and gets rounded. A source with some was drawn with its own silhouette, and a curve
+laid over that either does nothing or clips something deliberate, so it is left alone. Every run
+prints which way it went and what decided it; `on` and `off` take the decision away.
+
+The shape is a superellipse, |x/a|⁵ + |y/a|⁵ = 1, rather than a rounded rectangle: Apple's corner is
+a continuous curve, not a circular arc joined to a straight edge, and at that exponent the curve
+cuts the diagonal back by the same amount a circular corner of radius 0.221 would, against the
+0.2237 in Apple's own grid. It is applied once to the master and shrunk from there, so the 16×16
+gets an edge the box filter softened rather than a fresh hard curve drawn into it. Nothing is
+inset: the icon fills its canvas, where a macOS app icon proper sits inside 824 of its 1024, so this
+will read slightly larger in the Dock than the applications either side of it.
 
 ## The Linux launcher
 
