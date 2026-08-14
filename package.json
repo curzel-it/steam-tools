@@ -1,17 +1,18 @@
 {
   "name": "@curzel-it/steam-tools",
   "version": "0.1.0",
-  "description": "Upload packaged Electron builds to Steam, cut the store capsules out of one plate, and launch the game on Linux where Chromium cannot sandbox itself.",
+  "description": "Upload packaged Electron builds to Steam, cut the store capsules and the Mac and Linux icons out of one plate, and launch the game on Linux where Chromium cannot sandbox itself.",
   "type": "module",
   "license": "MIT",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/curzel-it/steam-tools.git"
   },
-  "keywords": ["steam", "steamcmd", "steampipe", "electron", "electron-builder", "linux", "sandbox", "capsule", "artwork"],
+  "keywords": ["steam", "steamcmd", "steampipe", "electron", "electron-builder", "linux", "sandbox", "capsule", "artwork", "icns", "icon"],
   "bin": {
     "steam-upload": "bin/steam-upload.mjs",
-    "steam-artwork": "bin/steam-artwork.mjs"
+    "steam-artwork": "bin/steam-artwork.mjs",
+    "steam-icons": "bin/steam-icons.mjs"
   },
   "files": [
     "bin",

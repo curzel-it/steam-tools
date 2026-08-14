@@ -4,6 +4,7 @@ The parts of shipping an Electron game on Steam that are the same in every proje
 
 - `steam-upload`: package the desktop builds, send them to SteamPipe, refuse to send a broken set.
 - `steam-artwork`: cut the store page's eight capsules out of one piece of key art.
+- `steam-icons`: make the Mac `.icns` and the zip of Linux PNGs out of one icon.
 - `launch-linux.sh`: the Linux depot's entry point, which picks the sandbox mode Chromium can
   actually use on the player's machine.
 
@@ -210,6 +211,63 @@ never be cropped away can be checked in the plate.
 
 The decoder takes any non-interlaced PNG: every colour type and bit depth, palettes and `tRNS`
 included. Anything else it refuses by name rather than guessing at.
+
+## The icons
+
+Steamworks' Installation page has two icon fields: a Mac `.icns`, and "16x16, 24x24, 32x32, 64x64,
+96x96 and so on, in PNG format, in a .zip file" for Linux. `steam-icons` makes both out of one PNG.
+
+```bash
+npx steam-icons                          # write both
+npx steam-icons --print                  # plan only, write nothing
+npx steam-icons --only linux             # or mac
+npx steam-icons --source art/icon.png --out steam
+npx steam-icons --square crop            # for a source that is not square
+```
+
+There is no Windows field, and that is not an omission: the Windows icon is compiled into the `.exe`,
+where electron-builder puts it from `build/icon.ico`. The `.icns` this writes is Steamworks' copy —
+the one inside the `.app` is electron-builder's own `build/icon.icns`, and the same source serves
+both.
+
+| Output | What is in it |
+|---|---|
+| `mac_icon.icns` | ten entries, 16×16 to 512×512@2x, each an embedded PNG |
+| `linux_icons.zip` | one PNG per size, `icon_16x16.png` to `icon_256x256.png`, flat, no folder |
+
+The `.icns` carries every size macOS asks for including the `@2x` types, since a Retina Mac asks for
+`ic11` by name and a file without it is drawn by enlarging something else. The zip's sizes are the
+five Steam lists plus the rest of the freedesktop hicolor set — 48 in particular, which Steam does
+not name and which most launchers ask for first.
+
+### The source
+
+An `icon` block in `steam.config.json`, or in the `"steam"` key of `package.json`. Only `source` is
+required.
+
+```json
+{
+  "icon": {
+    "source": "art/icon.png",
+    "out": "steam",
+    "square": "pad",
+    "focus": { "x": 0.5, "y": 0.5 },
+    "linuxSizes": [16, 24, 32, 48, 64, 96, 128, 256]
+  }
+}
+```
+
+| Key | Meaning |
+|---|---|
+| `square` | what to do with a source that is not square. `pad` (default) centres it on a transparent square and keeps all of it; `crop` takes the largest square in it |
+| `focus` | 0..1 in the source, the point `crop` centres on. There is nothing for it to do in `pad`, and a run that was given one anyway says so |
+| `linuxSizes` | the PNGs in the zip |
+
+One square PNG on transparency, 1024×1024 or bigger, and nothing is enlarged or padded at all. Every
+size prints its resampling filter, and anything bigger than the source is called out in capitals —
+1024 is what macOS wants and what almost no icon source has. An opaque source is reported too: an
+icon with no transparency in it is drawn as the rectangle it is by a Dock, a launcher and a task
+switcher, and that is not something a resize can fix.
 
 ## The Linux launcher
 

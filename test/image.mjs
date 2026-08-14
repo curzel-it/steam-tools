@@ -4,7 +4,7 @@
 // too softly is a capsule, while a capsule framed from the wrong part of the picture is a mistake
 // nobody catches until it is on a store page. It is pure arithmetic, so there is no excuse.
 
-import { crop, filterFor, frame, resample } from "../src/image.mjs";
+import { crop, filterFor, frame, pad, resample } from "../src/image.mjs";
 import { ok, group, same } from "./harness.mjs";
 
 // A test image whose every pixel says where it came from, so a crop or a scale that moved is
@@ -105,6 +105,26 @@ group("crop copies the rectangle and nothing else", () => {
   ok(cut.width === 4 && cut.height === 6, "the size is what was asked for");
   ok(same(at(cut, 0, 0), [3, 5, 0, 255]), "its top-left is the source pixel it started at");
   ok(same(at(cut, 3, 5), [6, 10, 0, 255]), "and its bottom-right is the last one inside");
+});
+
+group("pad centres what it is given and leaves the rest clear", () => {
+  // A 4x2 into a 4x4: one clear row above and one below, and nothing moved sideways.
+  const out = pad(grid(4, 2), 4, 4);
+  ok(out.width === 4 && out.height === 4, "the canvas is the size asked for");
+  ok(same(at(out, 0, 0), [0, 0, 0, 0]), "the row above is transparent, alpha and colour both");
+  ok(same(at(out, 3, 3), [0, 0, 0, 0]), "and so is the row below");
+  ok(same(at(out, 0, 1), [0, 0, 0, 255]) && same(at(out, 3, 2), [3, 1, 0, 255]),
+    "the picture sits between them, at its own size and unaltered");
+
+  // An odd margin has to go somewhere. Down and right, consistently: a version that rounded up puts
+  // the two axes' remainders on opposite sides and the icon comes out visibly off-centre.
+  const odd = pad(grid(2, 2), 5, 5);
+  ok(same(at(odd, 1, 1), [0, 0, 0, 255]) && same(at(odd, 2, 2), [1, 1, 0, 255]),
+    "a margin that cannot be split evenly leaves the extra pixel on the bottom and the right");
+
+  ok(same(Array.from(pad(grid(3, 3), 3, 3).data), Array.from(grid(3, 3).data)), "padding to its own size is a copy");
+  ok(failed(() => pad(grid(4, 4), 2, 4)).includes("smaller than"),
+    "and padding to something smaller is refused rather than quietly cropping");
 });
 
 group("nearest neighbour reproduces pixels rather than blending them", () => {

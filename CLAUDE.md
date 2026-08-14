@@ -1,8 +1,9 @@
 # Hello Claude!
 
 This is **steam-tools** — the parts of shipping an Electron game on Steam that are the same in
-every project: the SteamPipe upload, the store artwork cut out of one plate, and the Linux launcher
-that decides how much sandbox Chromium can actually have on the player's machine.
+every project: the SteamPipe upload, the store artwork cut out of one plate, the Mac and Linux
+icons made out of one PNG, and the Linux launcher that decides how much sandbox Chromium can
+actually have on the player's machine.
 
 It is consumed as a dev dependency by other repos, which is the fact that shapes everything below:
 a change here reaches games that are already on the store, and it reaches them without anybody

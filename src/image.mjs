@@ -1,4 +1,4 @@
-// CUTTING A RECTANGLE OUT AND MAKING IT THE SIZE STEAM ASKED FOR. Three operations on the RGBA
+// CUTTING A RECTANGLE OUT AND MAKING IT THE SIZE STEAM ASKED FOR. Four operations on the RGBA
 // buffers `src/png.mjs` hands back, and one piece of pure arithmetic that decides where the
 // rectangle goes.
 //
@@ -20,6 +20,23 @@ export function crop(img, x, y, w, h) {
   for (let row = 0; row < h; row++) {
     const from = ((y + row) * img.width + x) * 4;
     out.set(img.data.subarray(from, from + w * 4), row * w * 4);
+  }
+  return { width: w, height: h, data: out };
+}
+
+// Grow the canvas without touching a pixel of what is on it. An icon source that is not square has
+// to become one, and this is the half of that choice that cannot lose anything: the mark ends up
+// smaller inside its square, where cropping ends up with part of the mark outside it.
+export function pad(img, w, h) {
+  if (w < img.width || h < img.height) {
+    throw new Error(`pad to ${w}x${h} is smaller than the ${img.width}x${img.height} going into it`);
+  }
+  const out = new Uint8Array(w * h * 4);
+  const x = Math.floor((w - img.width) / 2);
+  const y = Math.floor((h - img.height) / 2);
+  for (let row = 0; row < img.height; row++) {
+    const from = row * img.width * 4;
+    out.set(img.data.subarray(from, from + img.width * 4), ((y + row) * w + x) * 4);
   }
   return { width: w, height: h, data: out };
 }
