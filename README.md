@@ -1,11 +1,11 @@
 # steam-tools
 
-The two parts of shipping an Electron game on Steam that are the same in every project:
+The parts of shipping an Electron game on Steam that are the same in every project:
 
-- **`steam-upload`** — package the desktop builds, send them to SteamPipe, refuse to send a broken
-  set.
-- **`launch-linux.sh`** — the Linux depot's entry point, which decides how much sandbox Chromium can
-  actually have on the player's machine instead of assuming.
+- `steam-upload`: package the desktop builds, send them to SteamPipe, refuse to send a broken set.
+- `steam-artwork`: cut the store page's eight capsules out of one piece of key art.
+- `launch-linux.sh`: the Linux depot's entry point, which picks the sandbox mode Chromium can
+  actually use on the player's machine.
 
 No dependencies, runtime or dev. Node ≥ 18 and `/bin/sh`.
 
@@ -13,44 +13,38 @@ No dependencies, runtime or dev. Node ≥ 18 and `/bin/sh`.
 npm i -D github:curzel-it/steam-tools
 ```
 
-## The Linux launcher, and why a depot needs one
+## The Linux launcher
 
-Electron ships a helper called `chrome-sandbox` that has to be owned by root with the setuid bit.
-**A Steam depot cannot carry the setuid bit**, and the client that unpacks it is not root, so it
-could not restore one anyway. Chromium then refuses to start:
+Electron's `chrome-sandbox` helper needs the setuid bit and root ownership. A Steam depot cannot
+carry that bit, so Chromium aborts on startup:
 
 ```
 FATAL:setuid_sandbox_host.cc The SUID sandbox helper binary was found, but is not
 configured correctly. Rather than run without sandboxing I'm aborting now.
 ```
 
-That goes to stderr, **which Steam shows nobody**. The player presses Play, the status flips Running
-then Stopped, no window ever appears. It does not reproduce on your desktop — there `chrome-sandbox`
-still has its bit from the tarball — which is what makes it a launch-day bug.
+Steam shows that stderr to nobody, so the player only sees Running flip to Stopped. It does not
+reproduce from a hand-unpacked tarball, where the bit survives, and it cannot be fixed from
+JavaScript: Chromium sets up the sandbox before the main script runs, so
+`appendSwitch("no-sandbox")` is too late
+([electron#20063](https://github.com/electron/electron/issues/20063)). The flag has to be on argv,
+which is why this is a shell script.
 
-It also **cannot be fixed from JavaScript**. Chromium sets its sandbox up during early startup,
-before the Electron main script is evaluated, so `app.commandLine.appendSwitch("no-sandbox")` is too
-late and cannot even print that it fired ([electron#20063](https://github.com/electron/electron/issues/20063)).
-The flag has to be on argv, which is why this is a shell script.
+`launch-linux.sh` takes the first rung that works:
 
-`launch-linux.sh` measures, three rungs, best first:
-
-| What the machine has | It launches with | Who lands here |
+| What the machine has | Launches with | Who lands here |
 |---|---|---|
-| `chrome-sandbox` setuid **and** root-owned | nothing — the full sandbox | never a Steam install; a tarball unpacked by hand |
+| `chrome-sandbox` setuid and root-owned | nothing, so the full sandbox | a tarball unpacked by hand, never a Steam install |
 | unprivileged user namespaces | `--disable-setuid-sandbox` | a normal Linux Steam install |
 | neither | `--no-sandbox` | Flatpak Steam (Bazzite, Nobara, most Fedora software centres), Ubuntu 24.04's AppArmor restriction, hardened kernels |
 
-The bottom row is the one that matters: without it Chromium finds no usable sandbox and aborts. The
-middle row is why the flag is not simply always `--no-sandbox` — where the namespace sandbox works,
-a renderer configured with `sandbox: true` stays confined. **Rung 2 is asked, not assumed**: the
-sysctls can say namespaces are allowed while the runtime the game is inside still denies the
-syscall, so the probe is an actual `unshare`. Anything it cannot prove falls to rung 3, which is the
-direction for a wrong answer to be wrong in — that one still plays.
+Rung 2 keeps `sandbox: true` renderers confined, which is why the launcher does not always pass
+`--no-sandbox`. It probes with a real `unshare` rather than reading sysctls, since the runtime the
+game is inside can deny the syscall anyway. Anything unproven drops to rung 3, which still launches.
 
 ### Shipping it
 
-Point `extraFiles` straight into `node_modules`, so the launcher updates with the dependency:
+Point `extraFiles` into `node_modules` so the launcher updates with the dependency:
 
 ```json
 {
@@ -66,36 +60,26 @@ Point `extraFiles` straight into `node_modules`, so the launcher updates with th
 }
 ```
 
-Then in Steamworks → *Installation* → *General Installation*, set the **Linux launch option to
-`launch-linux.sh`, not the binary**. That field is the whole delivery mechanism; getting it wrong
-reproduces the original bug exactly.
+Then set the Linux launch option in Steamworks (Installation → General Installation) to
+`launch-linux.sh`, not the binary.
 
-Some projects prefer the script to *be* the product name (`the-game` launching `the-game-bin`), so
-the existing launch option keeps working. Both shapes are supported — the script finds the binary
-beside it rather than naming one: every plain file with no dot in its name that is not the script
-itself and not one of Chromium's own helpers. In an electron-builder `--dir` output that is exactly
-one file. If a layout ever makes that untrue, `STEAM_TOOLS_EXE` names it outright, and an ambiguous
-directory is an error listing what it saw rather than a guess.
+The script finds the binary beside it: the one extensionless plain file that is not the script or a
+Chromium helper. Naming the script after the product works too, with `the-game` launching
+`the-game-bin`. `STEAM_TOOLS_EXE` names the binary directly, and an ambiguous directory is an error
+listing what it found.
 
-### When a player's window never opens
+### Debugging
 
-`STEAM_TOOLS_SANDBOX` overrides the measurement — `1` forces the full sandbox, `0` forces
-`--no-sandbox`. A player can put it in Steam's *Launch Options* as `STEAM_TOOLS_SANDBOX=0 %command%`,
-which is the answer to give while a fix uploads.
-
-To see which rung a machine took:
+`STEAM_TOOLS_SANDBOX=1` forces the full sandbox, `0` forces `--no-sandbox`. A player can set it in
+Steam's Launch Options as `STEAM_TOOLS_SANDBOX=0 %command%`. To see which rung a machine takes:
 
 ```bash
 sh -x ~/.local/share/Steam/steamapps/common/Your\ Game/launch-linux.sh
 ```
 
-And read the exit code from `~/.steam/steam/logs/gameprocess_log.txt` before anything else:
-
-| Exit code | Meaning |
-|---|---|
-| `0` | the game ran and quit normally |
-| `133` | Chromium aborted — the sandbox is implicated, this is your problem |
-| `255` | the game never ran — Steam's own launch layer is. **Restart the Steam client first**: a client session older than the installed build can hold stale launch state, and that has been the entire fix after hours spent instrumenting the wrapper chain |
+Check the exit code in `~/.steam/steam/logs/gameprocess_log.txt` first. `133` is Chromium aborting,
+so the sandbox is involved. `255` means the game never started: restart the Steam client, since a
+session older than the installed build holds stale launch state.
 
 ## The upload
 
@@ -106,13 +90,13 @@ npx steam-upload --live smoketest   # upload and set it live on a branch
 npx steam-upload --root path/to/project
 ```
 
-Call it directly rather than through `npm run x -- --flag`: npm's PowerShell shim drops arguments
-after `--`, and losing `--print` means doing the upload for real.
+Call it directly, not through `npm run x -- --flag`: npm's PowerShell shim drops arguments after
+`--`, and losing `--print` means uploading for real. It runs on any of the three hosts, probing for
+whichever steamcmd is installed.
 
 ### Configuration
 
-`steam.config.json` at the project root — or a `"steam"` key in `package.json` for a project that
-would rather not grow a file:
+`steam.config.json` at the project root, or a `"steam"` key in `package.json`:
 
 ```json
 {
@@ -127,81 +111,146 @@ would rather not grow a file:
 | Field | Meaning |
 |---|---|
 | `appId` | required |
-| `depots` | required for each platform you upload; missing ones are simply not in the build |
-| `package` | optional. Never used — printed as a reminder, because **a depot created after the app is not added to its package automatically**, and a depot outside the package uploads perfectly and reaches nobody |
+| `depots` | required per platform you upload; missing ones are not in the build |
+| `package` | optional and unused, printed as a reminder: a depot created after the app is not added to its package automatically, and a depot outside the package uploads fine and reaches nobody |
 | `name` | build-list label. Defaults to `build.productName`, then the npm package name |
 | `macArch` | which `dist/mac-*` folder is yours. Default `arm64` |
 | `dist`, `temp` | output folders. Default `build.directories.output` (or `dist`) and `temp` |
 
-**Ids are not secrets** — an AppID is in the store URL and a depot id is visible to anyone who owns
-the game. Commit them, and a fresh clone can upload. The credential is the part that stays out:
+Ids are not secrets, since an AppID is in the store URL and a depot id is visible to anyone who owns
+the game. Commit them and a fresh clone can upload. The credentials stay out:
 
 ```bash
 STEAM_USERNAME=you            # required, in .env
-STEAM_PASSWORD=...            # optional — omit it (see below)
+STEAM_PASSWORD=...            # optional, see below
 STEAMWORKS_BUILDER=...        # path to the SDK's tools/ContentBuilder. Default: ~/dev/steamworks-sdk/tools/ContentBuilder
 STEAM_APP_ID=... STEAM_DEPOT_WIN=... STEAM_DEPOT_MAC=... STEAM_DEPOT_LINUX=...
 ```
 
-Run `steamcmd +login <user>` by hand once and answer the Steam Guard prompt. steamcmd caches a
-sentinel, and every run after that needs only the username — no password ever passes through this
-tool. The env vars override the config file, which is what a second store page or a branch app
-wants.
+Run `steamcmd +login <user>` once by hand to answer the Steam Guard prompt. It caches a sentinel, so
+later runs need only the username. The env vars override the config file, which is what a second
+store page or a branch app wants.
 
-The build description is `<name> <version> (<git sha>)`. **The commit is worth more than the version
-string there**: a version can sit unchanged for a long time, and the thing you want to know six
-builds later is which tree it was.
+The build description is `<name> <version> (<git sha>)`. The sha matters more than the version, which
+can sit unchanged across many builds.
 
 ### What it refuses to do
 
-- **Upload platform folders from different builds.** The packages going up are compared file by
-  file inside their `app.asar` before anything is sent. This is the one worth knowing about: running
-  electron-builder for a subset over an existing `dist/` — the normal way to work, since a Mac
-  package can only be built on a Mac — leaves the other platforms' folders behind. steamcmd then
-  reports success on every depot, Steam dedupes the unchanged content away, and the fix never
-  reaches the players on the stale one. It is invisible without this check.
-
-  The comparison is per file rather than one hash of the archive, because a launcher shipped as an
-  `extraFiles` entry on Linux and only there sits *inside* the Windows and macOS asars and *outside*
-  the Linux one — a correct build never matches byte for byte. The exclusions are read back out of
-  `package.json`, so a second `extraFiles` entry cannot silently disarm the check.
+- **Upload platform folders from different builds.** The packages are compared file by file inside
+  their `app.asar` first. Rebuilding one platform over an existing `dist/` (normal, since a Mac
+  package needs a Mac) leaves the others stale, steamcmd reports success on every depot, Steam
+  dedupes the unchanged content away, and the fix never reaches those players. The comparison is per
+  file because a Linux-only `extraFiles` launcher sits inside the Windows and macOS asars and outside
+  the Linux one, so a correct build never matches byte for byte. Exclusions are read from
+  `package.json`, so a second `extraFiles` entry cannot quietly disarm the check.
 
 - **Upload a macOS package for the wrong architecture.** A leftover `dist/mac` from an older x64
-  build sorts ahead of `dist/mac-arm64` and would install and run under Rosetta on the Apple Silicon
-  Mac that pushed it, without a word.
+  build sorts ahead of `dist/mac-arm64` and would run under Rosetta on the Mac that pushed it.
 
-- **Accept an id that is not one.** An `STEAM_APP_ID` override that does not look like a Steam id
-  stops the run rather than falling back to the real app. It is the one mistake here with a public
-  blast radius.
+- **Accept an id that is not one.** A `STEAM_APP_ID` that does not look like a Steam id stops the run
+  instead of falling back to the real app.
 
-- **Promote anything by default.** A build lands in Steamworks unpromoted; `--live` takes a branch,
-  and Steam rejects `SetLive` on the default branch anyway, so shipping to everyone stays a
-  deliberate click in the UI.
+- **Promote anything by default.** Builds land unpromoted; `--live` takes a branch, and Steam rejects
+  SetLive on the default branch.
 
-It runs on any of the three hosts — it probes for whichever steamcmd the box has, so a Windows or
-Linux machine can push the depots it can build without borrowing a Mac.
-
-**It does not sign anything.** Windows and Linux depots do not need it. The macOS `.app` does — an
-unsigned, un-notarized bundle is the one real risk in a desktop build — and that has to happen on a
-Mac, before this runs. Verify the copy *Steam installed*, not `dist/`:
+It signs nothing. Windows and Linux do not need it; the macOS `.app` does, on a Mac, before this
+runs. Verify the copy Steam installed, not `dist/`:
 
 ```bash
 codesign --verify --deep --strict ~/Library/Application\ Support/Steam/steamapps/common/Your\ Game/Your\ Game.app
 ```
+
+## The artwork
+
+Steamworks wants the same key art at eight sizes in five shapes. `steam-artwork` cuts all eight out
+of one image.
+
+```bash
+npx steam-artwork                                   # write them all
+npx steam-artwork --print                           # plan only, write nothing
+npx steam-artwork --only library_hero,small_capsule
+npx steam-artwork --source art/keyart.png --out steam
+npx steam-artwork --list                            # the sizes, and the two done by hand
+```
+
+| Asset | Size | Where it shows |
+|---|---|---|
+| `header_capsule` | 920×430 | top of the store page, and the library grid |
+| `small_capsule` | 462×174 | every list — search, top sellers, new releases |
+| `main_capsule` | 1232×706 | the featured carousel on the front page |
+| `vertical_capsule` | 748×896 | seasonal sale pages |
+| `page_background` | 1438×810 | behind the store page; Steam tints and fades it |
+| `library_capsule` | 600×900 | the player's library and collections |
+| `library_header` | 920×430 | the library's recent games row |
+| `library_hero` | 3840×1240 | top of the library detail page |
+
+Filenames carry their dimensions (`header_capsule_920x430.png`), because there are two 920×430
+fields in Steamworks and four assets whose names all start with "capsule".
+
+**Two of the nine assets Steamworks asks for are not in that table, and the tool says so every run.**
+Screenshots have to be actual gameplay, which rules out a marketing plate however much it looks like
+the game; and the library logo is drawn on transparency, so there is nothing in a background to cut
+out. Seven files in a folder look exactly like nine to whoever comes back to this in a month.
+
+### Configuration
+
+An `artwork` block in `steam.config.json` (or in `package.json`'s `"steam"` key). Only `source` is
+required; the defaults centre every rectangle and take as much of the picture as its shape allows.
+
+```json
+{
+  "artwork": {
+    "source": "art/keyart.png",
+    "out": "steam",
+    "focus": { "x": 0.5, "y": 0.5 },
+    "assets": {
+      "library_hero":    { "focus": { "y": 0.62 } },
+      "small_capsule":   { "zoom": 1.8 },
+      "page_background": { "fit": "native" }
+    }
+  }
+}
+```
+
+| Key | Meaning |
+|---|---|
+| `focus` | 0..1 in the source, the point each rectangle centres on. Clamped so it stays inside |
+| `zoom` | ≥ 1, tightens the rectangle. What a capsule read at a glance usually wants |
+| `fit` | `cover` (default) takes as much of the picture as the shape allows; `native` takes the target size 1:1 where the source is big enough, for a capsule with no resampling in it |
+| `crop` | an explicit rectangle in source pixels, **grown** to the target's shape rather than squashed into it |
+| `skip` | leave this one out |
+| `source` | a different plate for this one asset |
+
+Anything under `assets` that is not an asset name, and any key inside one that is not an option
+above, **stops the run**. A misspelling there is the worst kind of quiet failure: every capsule is
+still produced, framed exactly as if nothing had been asked for.
+
+### What it prints, and why
+
+```
+library_hero_3840x1240.png   crop 1920x620 at 0,230   2.000x nearest   UPSCALED
+   safe zone covers source 745,445 to 1175,635 — keep what matters inside it
+```
+
+Every asset reports its crop, its scale and its resampling filter, whether or not anything is odd
+about it. **The filter is chosen from the numbers, not configured.** An exact whole-number
+enlargement is nearest neighbour, because a game render scaled 2× by anything that interpolates
+comes back as mush; shrinking is a box filter, because dropping rows throws away the thin bright
+lines that are the whole subject of a vector render; what is left over is bilinear.
+
+`library_hero` is 3840 wide and almost no source is, so an enlargement is called out in capitals
+rather than left to be noticed on the store page. It also prints where Steam's 860×380 safe zone —
+all of the hero that survives at every client width — lands back in the source, so what will never
+be cropped away can be checked in the plate.
+
+The decoder takes any non-interlaced PNG: every colour type, every bit depth, palettes and `tRNS`
+included. What it cannot read, it refuses by name rather than guessing at.
 
 ## Tests
 
 ```bash
 npm test
 ```
-
-No framework, no network, no Steam. The launcher is copied into a temp directory beside a stub that
-prints its argv and every branch is taken for real, because a grep for `--no-sandbox` in a shell
-script is exactly the kind of green check that hid this bug in the first place. The refusals are
-checked as exit codes, against a throwaway project.
-
-What no check here can answer is whether the window actually opens on a Steam install. That needs a
-Linux box; everything short of it is necessary and not sufficient.
 
 ## License
 

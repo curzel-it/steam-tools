@@ -73,7 +73,10 @@ function requireId(env, key, fallback, what) {
 export const PLATFORMS = ["win", "mac", "linux"];
 export const DEPOT_ENV = { win: "STEAM_DEPOT_WIN", mac: "STEAM_DEPOT_MAC", linux: "STEAM_DEPOT_LINUX" };
 
-export function loadConfig(root, env) {
+// The config as it is written, before anything is required of it. Separate from loadConfig because
+// not everything here needs an AppID: the store artwork can be cut long before the app exists, and
+// demanding an id to crop a picture would be a wall with nothing behind it.
+export function rawConfig(root) {
   const pkg = readPackage(root);
   const path = join(root, "steam.config.json");
   let raw = pkg.steam;
@@ -84,6 +87,11 @@ export function loadConfig(root, env) {
       die(`steam.config.json is not valid JSON: ${e.message}`);
     }
   }
+  return { pkg, path, raw };
+}
+
+export function loadConfig(root, env) {
+  const { pkg, path, raw } = rawConfig(root);
   if (!raw && !env.STEAM_APP_ID) {
     die("no steam.config.json and no \"steam\" key in package.json.\n" +
       `    Write one at ${path}:\n\n${TEMPLATE}\n\n` +

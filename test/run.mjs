@@ -4,7 +4,7 @@
 
 import { checks, failures } from "./harness.mjs";
 
-const SUBJECTS = ["launcher", "upload", "cli"];
+const SUBJECTS = ["launcher", "upload", "cli", "png", "image", "artwork"];
 
 for (const name of SUBJECTS) await import(`./${name}.mjs`);
 
