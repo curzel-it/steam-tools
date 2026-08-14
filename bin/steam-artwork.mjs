@@ -71,6 +71,12 @@ function list() {
 function byHand() {
   console.log("\n  Not cut from a background — these two are made by hand:\n");
   for (const [what, why] of BY_HAND) console.log(`    ${what}\n     ${why}\n`);
+  // The sizes are only half of what Steamworks asks. The rest is about content — a logo that has to
+  // fill the small capsule, a hero that must carry no text at all — and none of it is anything a
+  // crop can satisfy, so it is written down where there is room for the argument.
+  console.log("  What Steam asks of each asset beyond its size is in steam-tools' README,\n" +
+    "  under \"What Steam asks of each one\". A capsule can be the right number of pixels\n" +
+    "  and still be rejected.\n");
 }
 
 function main() {
