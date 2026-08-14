@@ -1,0 +1,55 @@
+# Hello Claude!
+
+This is **steam-tools** — the two parts of shipping an Electron game on Steam that are the same in
+every project: the SteamPipe upload, and the Linux launcher that decides how much sandbox Chromium
+can actually have on the player's machine.
+
+It is consumed as a dev dependency by other repos, which is the fact that shapes everything below:
+a change here reaches games that are already on the store, and it reaches them without anybody
+reading the diff.
+
+## Handling a task
+1. For anything non-trivial, plan before implementing, and ask about what is genuinely uncertain
+2. Implement, run `npm test`
+3. Review, clean up, delete comments that only restate the code
+4. Commit
+
+## Testing
+- `npm test` (`test/run.mjs`) — no framework, no network, no Steam, no dependencies. `test/run.mjs`
+  imports one file per subject and each runs its checks as it is imported, so that import list is
+  both the running order and the map of what is covered.
+- **The launcher is run, not read.** `test/launcher.mjs` copies the real `launch-linux.sh` into a
+  temp directory beside a stub that prints its argv, and takes every branch for real. A grep for
+  `--no-sandbox` in a shell script is the test that let this bug ship in the first place: the policy
+  was green as a decision table while the code that delivered it could never run.
+- **The refusals are checked as exit codes.** `test/cli.mjs` spawns the CLI against a throwaway
+  project, because the point of a guard is that it stops an upload, not that it logs.
+- **Mutation-check whatever you add.** Break the line the new check covers, watch it fail, put it
+  back. A check that passes against broken code is worse than no check.
+- Creating a file and executing it costs ~450 ms on macOS, once per file. Reuse one stub through
+  symlinks rather than writing one per case.
+
+## Rules
+- **No dependencies, ever** — not at runtime, not in dev. Node's standard library and `/bin/sh`.
+  This gets installed into other people's projects; it does not get to bring anything with it.
+- **Nothing in this repo is a secret, because it is public.** No AppIDs, no depot ids, no
+  usernames, no paths from a consuming project — not in code, not in tests, not in the README.
+  Examples use Spacewar (`480`) and obviously-fake depots. Ids belong in the project that owns
+  them; credentials belong in that project's `.env` and nowhere else.
+- **The consuming project owns its numbers.** Nothing here may hardcode a value that differs
+  between games. If a new one shows up, it is a field in `steam.config.json` with a sane default,
+  not a constant.
+- **A default that guesses must be able to say it guessed.** Ambiguity is an error naming what it
+  saw; silence is how a build ships to the wrong app.
+- **One feature, one file.** Named exports, never default. `src/` is the library, `bin/` is the
+  CLI, `test/` mirrors them.
+- The launcher is POSIX `/bin/sh` — no bashisms, no arrays, no `readlink -f` assumptions beyond
+  what busybox has. It runs on whatever the player's distro ships.
+- Comments here carry the argument, not the mechanics. Most of what is written down is *why a
+  cheaper version of this is wrong*, and it is written down because every one of those was learned
+  by shipping a build that did not launch.
+
+## Compatibility
+Consumers pin this by git ref. Renaming a config field, a CLI flag, or `STEAM_TOOLS_*` env var is a
+breaking change for a project that may only find out during a release — so keep the old spelling
+working, or bump the major and say so in the README.

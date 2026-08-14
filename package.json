@@ -1,0 +1,28 @@
+{
+  "name": "@curzel-it/steam-tools",
+  "version": "0.1.0",
+  "description": "Upload packaged Electron builds to Steam, and launch them on Linux where Chromium cannot sandbox itself.",
+  "type": "module",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/curzel-it/steam-tools.git"
+  },
+  "keywords": ["steam", "steamcmd", "steampipe", "electron", "electron-builder", "linux", "sandbox"],
+  "bin": {
+    "steam-upload": "bin/steam-upload.mjs"
+  },
+  "files": [
+    "bin",
+    "src",
+    "launch-linux.sh",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "test": "node test/run.mjs"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}
